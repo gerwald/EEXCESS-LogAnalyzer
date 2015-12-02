@@ -1,0 +1,204 @@
+<html>
+<head>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.10.1/lodash.min.js"></script>
+	<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+	<style>
+		body{
+			font-family:arial;
+		}
+		#result .header{
+			font-weight:bold;
+			padding-top:10px;
+		}
+		#result .action{
+			white-space:nowrap;
+		}
+		table { border-collapse: collapse; }
+		table, th, td {
+		   border: 1px solid black;
+		}
+	</style>
+</head>
+<body>
+
+
+<input type="checkbox" id="doAdd">Add values<br>
+Select Raw Logfile: <input type="file" id="file-input-raw" multiple /><br />
+Select Logfile: <input type="file" id="file-input-processed" /><br>
+<button id="download">Download all</button>
+<h3>Contents of the file:</h3>
+<pre id="file-content"></pre>
+
+<table id="result">
+</table>
+
+
+<script>
+
+var logs = []
+function readFileProcessed(fileEvent){
+    
+    var files = fileEvent.target.files;
+    if (files.length == 0) {
+        return;
+    }
+    
+    if (!$('#doAdd').is(':checked')){
+        logs = [];
+        $('#file-content').html('');
+        $('#result').empty();
+    }
+    
+    var filesExecuted = 0;
+    for (var j=0; j<files.length; j++){
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var contents = e.target.result;
+            var newList = JSON.parse(contents);
+            logs = logs.concat(newList);
+            filesExecuted++;
+            $('#file-content').html(logs.length + " Logeinträge eingelesen.\r\n");
+            if (filesExecuted == files.length)
+                printLogs();
+        };
+        reader.readAsText(files[j]);
+    }
+}
+
+function readRawFile(fileEvent) {
+    
+    var files = fileEvent.target.files;
+    if (files.length == 0) {
+        return;
+    }
+    
+    if (!$('#doAdd').is(':checked')){
+        logs = [];
+        $('#file-content').html('');
+        $('#result').empty();
+    }
+    
+    var filesExecuted = 0;
+    for (var j=0; j<files.length; j++){
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var contents = e.target.result;
+            var lines = contents.split(/[\r\n]+/g);
+            for (var i = 0; i < lines.length; i++) {
+                if (lines[i].indexOf('moduleStatisticsCollected') > -1){
+                    //output.push('<li>' + lines[i] + '<br>');
+                    //console.log(lines[i]);
+                    var logLine = JSON.parse(lines[i]);
+                    for (var k=0; k<logLine.content.logs.length; k++){
+                        var logEntry = logLine.content.logs[k];
+                        logEntry.userID = logLine.origin.userID;
+                        logEntry.ip = logLine.ip;
+                        logs.push(logEntry);
+                    }
+                }
+            }
+            filesExecuted++;
+            $('#file-content').html(logs.length + " Logeinträge eingelesen.\r\n");
+            if (filesExecuted == files.length)
+                printLogs();
+        };
+        reader.readAsText(files[j]);
+    }
+}
+
+function printLogs(){
+    $header = $('#file-content');
+    $header.html('');
+    $('#result').empty();
+    
+    $header.html($header.html() + logs.length + " Logeinträge gefunden.\r\n");
+    var logsPerUser = _.groupBy(logs, function(i){ 
+        return i.userID + ' / ' + i.ip ;
+    });
+    $header.html($header.html() + Object.keys(logsPerUser).length + " Unique Users gefunden.\r\n");
+    
+    _.forEach(logsPerUser, function(n, key) {
+        printLogsForUser(key, logsPerUser[key]);
+    });
+}
+
+function printHeaderForUser(key, uiState){
+	$('#result').append('<tr class=header><td colspan=3>' + key + '</td></tr>');
+	$('#result').append('<tr><td colspan=3>' + uiState.browser.name +', '+ uiState.size + '</td></tr>');
+}
+
+function printLogsForUser(key, logs){
+    printHeaderForUser(key, logs[0].uiState);
+    logs = _.sortBy(logs, 'timestamp');
+    var timeBefore = null;
+    var ipBefore = null;
+    for (var j=0; j<logs.length; j++){
+        if (ipBefore != null && ipBefore != logs[j].ip){
+            printHeaderForUser(key, logs[j].uiState);
+        }
+        if (logs[j].seq == 1)
+            timeBefore = null;
+            
+        var timeDiff = null;
+        if (timeBefore != null)
+            timeDiff = (logs[j].timestamp - timeBefore) / 1000
+        logLog(logs[j], timeDiff);
+        timeBefore = logs[j].timestamp;
+    }
+}
+
+
+function logLog(logobject, timeDiff){    
+    var text = ''
+            //+ logobject.action 
+            //+ (', userID: ' + logobject.userID ) 
+            + (logobject.duration ? ', Duration: ' + logobject.duration  : '' ) 
+            + (logobject.value ? ', value: ' + logobject.value  : '' )
+            //+ (logobject.source ? ', source: ' + logobject.source  : '' )
+            + (logobject.component ? ', component: ' + logobject.component  : '' )
+            + (logobject.itemTitle ? ', itemTitle: ' + logobject.itemTitle  : '' )
+            + (logobject.itemCountOld ? ', itemCountOld: ' + logobject.itemCountOld  : '' )
+            + (logobject.itemCountNew ? ', itemCountNew: ' + logobject.itemCountNew  : '' )
+            + (logobject.itemCount ? ', itemCount: ' + logobject.itemCount  : '' )
+            + (logobject.old ? ', old: ' + logobject.old  : '' )
+            + (logobject.new ? ', new: ' + logobject.new  : '' )
+            + '\r\n';
+            
+    if (logobject.action == 'Mouse over times'){
+        text = JSON.stringify(logobject.components);
+        //for (var i=0; i<logobject.components.length; i++){
+        //	text+="";
+        //}
+    }
+            
+    $('#result').append('<tr><td>' + logobject.seq + '</td><td>' + (timeDiff || '') + '</td><td class=action>' + logobject.action + '</td><td>' + text + '</td></tr>');
+
+}
+
+function download(filename, text) {
+    var element = document.createElement('a');
+    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+    element.setAttribute('download', filename);
+    element.style.display = 'none';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+}
+
+$(document).on('ready', function(){
+    document.getElementById('file-input-raw').addEventListener('change', readRawFile, false);
+    //document.getElementById('file-input-processed').addEventListener('change', readFileProcessed, false);
+    $('#download').on('click', function(){
+        download('logs.txt', JSON.stringify(logs));
+    });
+    $('#file-input-processed').on('change', function(e){
+        readFileProcessed(e);
+    });
+});
+
+
+  
+</script>
+
+</body>
+</html>
