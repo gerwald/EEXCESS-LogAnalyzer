@@ -1,26 +1,30 @@
 <html>
 <head>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.10.1/lodash.min.js"></script>
-	<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
-	<style>
-		body{
-			font-family:arial;
-		}
-		#result .header{
-			font-weight:bold;
-			padding-top:10px;
-		}
-		#result .action{
-			white-space:nowrap;
-		}
-		table { border-collapse: collapse; }
-		table, th, td {
-		   border: 1px solid black;
-		}
+    <meta charset="utf-8"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.10.1/lodash.min.js"></script>
+    <script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+    <style>
+        body{
+            font-family:arial;
+        }
+        #result .header{
+            font-weight:bold;
+            padding-top:10px;
+        }
+        #result .action{
+            white-space:nowrap;
+        }
+        table { border-collapse: collapse; }
+        table, th, td {
+            border: 1px solid black;
+        }
+        .showLogline{ margin-right: 10px; }
+        .logline{
+            display: none;
+        }
 	</style>
 </head>
 <body>
-
 
 <input type="checkbox" id="doAdd">Add values<br>
 Select Raw Logfile: <input type="file" id="file-input-raw" multiple /><br />
@@ -89,10 +93,14 @@ function readRawFile(fileEvent) {
                     //output.push('<li>' + lines[i] + '<br>');
                     //console.log(lines[i]);
                     var logLine = JSON.parse(lines[i]);
+                    var logLineCopy = JSON.parse(lines[i]);
+                    logLineCopy.content = undefined;
                     for (var k=0; k<logLine.content.logs.length; k++){
                         var logEntry = logLine.content.logs[k];
                         logEntry.userID = logLine.origin.userID;
+                        logEntry.clientType = logLine.origin.clientType;
                         logEntry.ip = logLine.ip;
+                        logEntry.logContainer = logLineCopy;
                         logs.push(logEntry);
                     }
                 }
@@ -102,7 +110,7 @@ function readRawFile(fileEvent) {
             if (filesExecuted == files.length)
                 printLogs();
         };
-        reader.readAsText(files[j]);
+        reader.readAsText(files[j], 'iso-8859-1'); //"iso-8859-1", "windows-1252"
     }
 }
 
@@ -151,7 +159,7 @@ function printLogsForUser(key, logs){
 function logLog(logobject, timeDiff){    
     var text = ''
             //+ logobject.action 
-            //+ (', userID: ' + logobject.userID ) 
+            + (logobject.action == 'Dashboard opened' ? ', Client: ' + logobject.clientType  : '' ) 
             + (logobject.duration ? ', Duration: ' + logobject.duration  : '' ) 
             + (logobject.value ? ', value: ' + logobject.value  : '' )
             //+ (logobject.source ? ', source: ' + logobject.source  : '' )
@@ -164,14 +172,14 @@ function logLog(logobject, timeDiff){
             + (logobject.new ? ', new: ' + logobject.new  : '' )
             + '\r\n';
             
-    if (logobject.action == 'Mouse over times'){
-        text = JSON.stringify(logobject.components);
-        //for (var i=0; i<logobject.components.length; i++){
-        //	text+="";
-        //}
-    }
+    //if (logobject.action == 'Mouse over times'){
+    //    text = "" + JSON.stringify(logobject.components, null, "\t") + "";
+    //}
+    if (text.indexOf(', ') == 0)
+        text = text.substring(2);
             
-    $('#result').append('<tr><td>' + logobject.seq + '</td><td>' + (timeDiff || '') + '</td><td class=action>' + logobject.action + '</td><td>' + text + '</td></tr>');
+    $('#result').append('<tr><td>' + logobject.seq + '</td><td>' + (timeDiff || '') + '</td><td class=action>' + logobject.action + '</td><td>' + text 
+        + ' <a href="#" class="showLogline">+</a><pre class="logline">'+ JSON.stringify(logobject, null, "\t") + '</pre></td></tr>');
 
 }
 
@@ -193,6 +201,11 @@ $(document).on('ready', function(){
     });
     $('#file-input-processed').on('change', function(e){
         readFileProcessed(e);
+    });
+    
+    $(document).on('click', '.showLogline', function(e){
+        e.preventDefault();
+        $(this).next().toggle();
     });
 });
 
