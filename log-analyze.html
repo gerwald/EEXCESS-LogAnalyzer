@@ -106,7 +106,7 @@ function readRawFile(fileEvent) {
                 }
             }
             filesExecuted++;
-            $('#file-content').html(logs.length + " Logeinträge eingelesen.\r\n");
+            $('#file-content').html(logs.length + " Logentries found.\r\n");
             if (filesExecuted == files.length)
                 printLogs();
         };
@@ -119,11 +119,11 @@ function printLogs(){
     $header.html('');
     $('#result').empty();
     
-    $header.html($header.html() + logs.length + " Logeinträge gefunden.\r\n");
+    $header.html($header.html() + logs.length + " Logentries found.\r\n");
     var logsPerUser = _.groupBy(logs, function(i){ 
         return i.userID + ' / ' + i.ip ;
     });
-    $header.html($header.html() + Object.keys(logsPerUser).length + " Unique Users gefunden.\r\n");
+    $header.html($header.html() + Object.keys(logsPerUser).length + " Unique Users found.\r\n");
     
     _.forEach(logsPerUser, function(n, key) {
         printLogsForUser(key, logsPerUser[key]);
