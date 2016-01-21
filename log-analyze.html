@@ -29,7 +29,8 @@
 <input type="checkbox" id="doAdd">Add values<br>
 Select Raw Logfile: <input type="file" id="file-input-raw" multiple /><br />
 Select Logfile: <input type="file" id="file-input-processed" multiple /><br>
-<button id="download">Download all</button>
+<button id="download">download</button><input type=text value='Logs' id='downloadCaption' style="width:100px" />
+<a id="downloadlink" style="display:none;">download File</a>
 <h3>Contents of the file:</h3>
 <pre id="file-content"></pre>
 
@@ -86,17 +87,18 @@ function readRawFile(fileEvent) {
     for (var j=0; j<files.length; j++){
         var reader = new FileReader();
         reader.onload = function(e) {
-            var contents = e.target.result;
-            var lines = contents.split(/[\r\n]+/g);
+            var lines = e.target.result.split(/[\r\n]+/g);
+			var logLine, logLineCopy;
             for (var i = 0; i < lines.length; i++) {
                 if (lines[i].indexOf('moduleStatisticsCollected') > -1){
                     //output.push('<li>' + lines[i] + '<br>');
                     //console.log(lines[i]);
-                    var logLine = JSON.parse(lines[i]);
-                    var logLineCopy = JSON.parse(lines[i]);
+                    logLine = JSON.parse(lines[i]);
+                    logLineCopy = JSON.parse(lines[i]);
                     logLineCopy.content = undefined;
+					var logEntry;
                     for (var k=0; k<logLine.content.logs.length; k++){
-                        var logEntry = logLine.content.logs[k];
+                        logEntry = logLine.content.logs[k];
                         logEntry.userID = logLine.origin.userID;
                         logEntry.clientType = logLine.origin.clientType;
                         logEntry.ip = logLine.ip;
@@ -183,21 +185,39 @@ function logLog(logobject, timeDiff){
 
 }
 
-function download(filename, text) {
+function download() {
+	//var element = document.getElementById('downloadlink');
     var element = document.createElement('a');
-    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
-    element.setAttribute('download', filename);
-    element.style.display = 'none';
-    document.body.appendChild(element);
-    element.click();
+	document.body.appendChild(element);
+	
+	var filename = $(downloadCaption).val();
+	var i, j, logsPart, chunk = 2500, pad=((logs.length)+'').length;
+	for (i=0, j=logs.length; i<j; i+=chunk) {
+		logsPart = logs.slice(i, i+chunk);		
+		var max = i + chunk;
+		if (max > j)
+			max = j;
+		element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(JSON.stringify(logsPart)));
+		element.setAttribute('download', filename + '_' + leftPad(i, pad)  + '-' + leftPad(max, pad) + '.json');
+		element.style.display = 'none';		
+		element.click();
+	}  
     document.body.removeChild(element);
+}
+
+function leftPad(number, targetLength) {
+    var output = number + '';
+    while (output.length < targetLength) {
+        output = '0' + output;
+    }
+    return output;
 }
 
 $(document).on('ready', function(){
     document.getElementById('file-input-raw').addEventListener('change', readRawFile, false);
     //document.getElementById('file-input-processed').addEventListener('change', readFileProcessed, false);
     $('#download').on('click', function(){
-        download('logs.txt', JSON.stringify(logs));
+        download();
     });
     $('#file-input-processed').on('change', function(e){
         readFileProcessed(e);
