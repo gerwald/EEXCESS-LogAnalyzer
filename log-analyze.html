@@ -53,29 +53,19 @@ function readFileProcessed(fileEvent){
         $('#file-content').html('');
         $('#result').empty();
     }
-    
-    var filesExecuted = 0;
-    for (var j=0; j<files.length; j++){
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            var contents = e.target.result;
+	
+	processFilesSequentially(files, function(contents) {
             var newList = JSON.parse(contents);
             logs = logs.concat(newList);
-            filesExecuted++;
             $('#file-content').html(logs.length + " Logeinträge eingelesen.\r\n");
-            if (filesExecuted == files.length)
-                printLogs();
-        };
-        reader.readAsText(files[j]);
-    }
+        }, printLogs);
 }
 
-function readRawFile(fileEvent) {
+function readRawFiles(fileEvent) {
     
     var files = fileEvent.target.files;
-    if (files.length == 0) {
+    if (files.length == 0) 
         return;
-    }
     
     if (!$('#doAdd').is(':checked')){
         logs = [];
@@ -83,38 +73,71 @@ function readRawFile(fileEvent) {
         $('#result').empty();
     }
     
-    var filesExecuted = 0;
-    for (var j=0; j<files.length; j++){
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            var lines = e.target.result.split(/[\r\n]+/g);
-			var logLine, logLineCopy;
-            for (var i = 0; i < lines.length; i++) {
-                if (lines[i].indexOf('moduleStatisticsCollected') > -1){
-                    //output.push('<li>' + lines[i] + '<br>');
-                    //console.log(lines[i]);
-                    logLine = JSON.parse(lines[i]);
-                    logLineCopy = JSON.parse(lines[i]);
-                    logLineCopy.content = undefined;
-					var logEntry;
-                    for (var k=0; k<logLine.content.logs.length; k++){
-                        logEntry = logLine.content.logs[k];
-                        logEntry.userID = logLine.origin.userID;
-                        logEntry.clientType = logLine.origin.clientType;
-                        logEntry.ip = logLine.ip;
-                        logEntry.logContainer = logLineCopy;
-                        logs.push(logEntry);
-                    }
-                }
-            }
-            filesExecuted++;
-            $('#file-content').html(logs.length + " Logentries found.\r\n");
-            if (filesExecuted == files.length)
-                printLogs();
-        };
-        reader.readAsText(files[j], 'iso-8859-1'); //"iso-8859-1", "windows-1252"
-    }
+	processFilesSequentially(files, processRawFile, printLogs);
 }
+
+
+function processRawFile(content){
+	var i, k, logLine, logLineCopy, logEntry, lines;
+	lines = content.split(/[\r\n]+/g);
+	for (i = 0; i < lines.length; i++) {
+		if (lines[i].indexOf('moduleStatisticsCollected') > -1){
+			//output.push('<li>' + lines[i] + '<br>');
+			//console.log(lines[i]);
+			logLine = JSON.parse(lines[i]);
+			logLineCopy = JSON.parse(lines[i]);
+			logLineCopy.content = undefined;
+			for (k=0; k<logLine.content.logs.length; k++){
+				logEntry = logLine.content.logs[k];
+				logEntry.userID = logLine.origin.userID;
+				logEntry.clientType = logLine.origin.clientType;
+				logEntry.ip = logLine.ip;
+				logEntry.logContainer = logLineCopy;
+				logs.push(logEntry);
+			}
+		}
+	}
+	$('#file-content').html(logs.length + " Logentries found.\r\n");
+}
+
+function processFilesSequentially(inputFilesObject, processFunction, finishFunction) {
+	// needs to be an array, because of pop()
+	var filesArray = $.map(inputFilesObject, function(value, index) { return [value]; });	
+    var reader = new FileReader();
+
+    function processNext() {
+        var singleFile = filesArray.pop();
+        if (singleFile === undefined) {
+			finishFunction();
+            return;
+        }
+
+        (function dummy_function(file) {
+            reader.onload = function (e) {
+                //processRawFile(e.target.result);
+                processFunction(e.target.result);
+                // process next at the end
+                processNext();
+            };
+
+            reader.readAsText(file);
+        })(singleFile);
+    }
+
+    processNext();
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 function printLogs(){
     $header = $('#file-content');
@@ -132,13 +155,14 @@ function printLogs(){
     });
 }
 
-function printHeaderForUser(key, uiState){
+function printHeaderForUser(key, uiState, timestamp){
+	var date = new Date(timestamp);
 	$('#result').append('<tr class=header><td colspan=3>' + key + '</td></tr>');
-	$('#result').append('<tr><td colspan=3>' + uiState.browser.name +', '+ uiState.size + '</td></tr>');
+	$('#result').append('<tr><td colspan=3>' + uiState.browser.name +', '+ uiState.size + ', ' + date.getFullYear() + '-' + date.getMonth() + '-' + date.getDay() + ' ' + date.getHours() + ':' + date.getMinutes() +  '</td></tr>');
 }
 
 function printLogsForUser(key, logs){
-    printHeaderForUser(key, logs[0].uiState);
+    printHeaderForUser(key, logs[0].uiState, logs[0].timestamp);
     logs = _.sortBy(logs, 'timestamp');
     var timeBefore = null;
     var ipBefore = null;
@@ -214,7 +238,7 @@ function leftPad(number, targetLength) {
 }
 
 $(document).on('ready', function(){
-    document.getElementById('file-input-raw').addEventListener('change', readRawFile, false);
+    document.getElementById('file-input-raw').addEventListener('change', readRawFiles, false);
     //document.getElementById('file-input-processed').addEventListener('change', readFileProcessed, false);
     $('#download').on('click', function(){
         download();
