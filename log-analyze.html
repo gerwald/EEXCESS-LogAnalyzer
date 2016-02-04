@@ -7,21 +7,28 @@
         body{
             font-family:arial;
         }
-        #result .header{
+        #resultTable .header{
             font-weight:bold;
             padding-top:10px;
         }
-        #result .action{
+        #resultTable .action{
             white-space:nowrap;
         }
         table { border-collapse: collapse; }
         table, th, td {
             border: 1px solid black;
+			padding: 0 2px;
         }
         .showLogline{ margin-right: 10px; }
         .logline{
             display: none;
         }
+		td.number{
+			text-align:right;
+		}
+		tfoot{
+			font-weight:bold;
+		}
 	</style>
 </head>
 <body>
@@ -30,17 +37,28 @@
 Select Raw Logfile: <input type="file" id="file-input-raw" multiple /><br />
 Select Logfile: <input type="file" id="file-input-processed" multiple /><br>
 <button id="download">download</button><input type=text value='Logs' id='downloadCaption' style="width:100px" />
-<a id="downloadlink" style="display:none;">download File</a>
+<a id="downloadlink" style="display:none;">download File</a><br>
+
+Aktion:
+<select id="actionType">
+	<option value="">Reset</option>
+	<option value="showLogs" >Show Logs in Table</option>
+	<option value="statisticBrush" selected>Statistic: Brush</option>
+</select>
+
+
 <h3>Contents of the file:</h3>
 <pre id="file-content"></pre>
 
-<table id="result">
-</table>
+<table id="resultTable"></table>
 
 
 <script>
 
-var logs = []
+var global = {
+	logs:[],
+	logsPerUser: []
+};
 function readFileProcessed(fileEvent){
     
     var files = fileEvent.target.files;
@@ -49,16 +67,16 @@ function readFileProcessed(fileEvent){
     }
     
     if (!$('#doAdd').is(':checked')){
-        logs = [];
+        global.logs = [];
         $('#file-content').html('');
-        $('#result').empty();
+        $('#resultTable').empty();
     }
 	
 	processFilesSequentially(files, function(contents) {
             var newList = JSON.parse(contents);
-            logs = logs.concat(newList);
-            $('#file-content').html(logs.length + " Logeinträge eingelesen.\r\n");
-        }, printLogs);
+            global.logs = global.logs.concat(newList);
+            $('#file-content').html(global.logs.length + " Logeinträge eingelesen.\r\n");
+        }, executeAction);
 }
 
 function readRawFiles(fileEvent) {
@@ -68,12 +86,12 @@ function readRawFiles(fileEvent) {
         return;
     
     if (!$('#doAdd').is(':checked')){
-        logs = [];
+        global.logs = [];
         $('#file-content').html('');
-        $('#result').empty();
+        $('#resultTable').empty();
     }
     
-	processFilesSequentially(files, processRawFile, printLogs);
+	processFilesSequentially(files, processRawFile, executeAction);
 }
 
 
@@ -93,11 +111,11 @@ function processRawFile(content){
 				logEntry.clientType = logLine.origin.clientType;
 				logEntry.ip = logLine.ip;
 				logEntry.logContainer = logLineCopy;
-				logs.push(logEntry);
+				global.logs.push(logEntry);
 			}
 		}
 	}
-	$('#file-content').html(logs.length + " Logentries found.\r\n");
+	$('#file-content').html(global.logs.length + " Logentries found.\r\n");
 }
 
 function processFilesSequentially(inputFilesObject, processFunction, finishFunction) {
@@ -108,6 +126,15 @@ function processFilesSequentially(inputFilesObject, processFunction, finishFunct
     function processNext() {
         var singleFile = filesArray.pop();
         if (singleFile === undefined) {
+			// Finished!
+			global.logs = _.filter(global.logs, function (l){ return l.ip != '129.27.219.242'; });
+			global.logs = _.sortBy(global.logs, 'timestamp');
+			global.logsPerUser = _.groupBy(global.logs, function(l){ 
+				var date = new Date(l.timestamp);
+				return l.userID + ' / ' + l.ip + ' / ' + date.getFullYear() + '-' + date.getMonth() + '-' + date.getDay();
+				//return l.userID + ' / ' + l.ip;
+			});	
+			printHeaderStatistics();			
 			finishFunction();
             return;
         }
@@ -127,38 +154,24 @@ function processFilesSequentially(inputFilesObject, processFunction, finishFunct
     processNext();
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-function printLogs(){
+function printHeaderStatistics(){
     $header = $('#file-content');
     $header.html('');
-    $('#result').empty();
-    
-    $header.html($header.html() + logs.length + " Logentries found.\r\n");
-    var logsPerUser = _.groupBy(logs, function(i){ 
-        return i.userID + ' / ' + i.ip ;
-    });
-    $header.html($header.html() + Object.keys(logsPerUser).length + " Unique Users found.\r\n");
-    
-    _.forEach(logsPerUser, function(n, key) {
-        printLogsForUser(key, logsPerUser[key]);
+    $header.html($header.html() + global.logs.length + " Logentries found.\r\n");
+    $header.html($header.html() + Object.keys(global.logsPerUser).length + " Unique Users found.\r\n");
+}
+
+function printLogs(){
+    $('#resultTable').empty();        
+    _.forEach(global.logsPerUser, function(n, key) {
+        printLogsForUser(key, global.logsPerUser[key]);
     });
 }
 
 function printHeaderForUser(key, uiState, timestamp){
 	var date = new Date(timestamp);
-	$('#result').append('<tr class=header><td colspan=3>' + key + '</td></tr>');
-	$('#result').append('<tr><td colspan=3>' + uiState.browser.name +', '+ uiState.size + ', ' + date.getFullYear() + '-' + date.getMonth() + '-' + date.getDay() + ' ' + date.getHours() + ':' + date.getMinutes() +  '</td></tr>');
+	$('#resultTable').append('<tr class=header><td colspan=3>' + key + '</td></tr>');
+	$('#resultTable').append('<tr><td colspan=3>' + uiState.browser.name +', '+ uiState.size + ', ' + date.getFullYear() + '-' + date.getMonth() + '-' + date.getDay() + ' ' + date.getHours() + ':' + date.getMinutes() +  '</td></tr>');
 }
 
 function printLogsForUser(key, logs){
@@ -176,13 +189,12 @@ function printLogsForUser(key, logs){
         var timeDiff = null;
         if (timeBefore != null)
             timeDiff = (logs[j].timestamp - timeBefore) / 1000
-        logLog(logs[j], timeDiff);
+        printLogRow(logs[j], timeDiff);
         timeBefore = logs[j].timestamp;
     }
 }
 
-
-function logLog(logobject, timeDiff){    
+function printLogRow(logobject, timeDiff){    
     var text = ''
             //+ logobject.action 
             + (logobject.action == 'Dashboard opened' ? ', Client: ' + logobject.clientType  : '' ) 
@@ -204,9 +216,8 @@ function logLog(logobject, timeDiff){
     if (text.indexOf(', ') == 0)
         text = text.substring(2);
             
-    $('#result').append('<tr><td>' + logobject.seq + '</td><td>' + (timeDiff || '') + '</td><td class=action>' + logobject.action + '</td><td>' + text 
+    $('#resultTable').append('<tr><td>' + logobject.seq + '</td><td>' + (timeDiff || '') + '</td><td class=action>' + logobject.action + '</td><td>' + text 
         + ' <a href="#" class="showLogline">+</a><pre class="logline">'+ JSON.stringify(logobject, null, "\t") + '</pre></td></tr>');
-
 }
 
 function download() {
@@ -215,9 +226,9 @@ function download() {
 	document.body.appendChild(element);
 	
 	var filename = $(downloadCaption).val();
-	var i, j, logsPart, chunk = 2500, pad=((logs.length)+'').length;
-	for (i=0, j=logs.length; i<j; i+=chunk) {
-		logsPart = logs.slice(i, i+chunk);		
+	var i, j, logsPart, chunk = 2500, pad=((global.logs.length)+'').length;
+	for (i=0, j=global.logs.length; i<j; i+=chunk) {
+		logsPart = global.logs.slice(i, i+chunk);		
 		var max = i + chunk;
 		if (max > j)
 			max = j;
@@ -237,6 +248,119 @@ function leftPad(number, targetLength) {
     return output;
 }
 
+// Wieviele User haben gebrusht vs. nicht gebrusht
+// Wiviele User hatten einen brush und haben den gespeichert
+// brushes über die Visualisierungen verteilt
+// gespeicherte Filter über die Fitler verteilt
+
+function calculateStatisticBrush(){	  
+	var total = 0, totalduration=0;  
+    var uniqueUsersWithBrushs = _.filter(global.logsPerUser, function(logs) {
+		return _.some(logs, {action : 'Brush created'});		
+    });
+    var uniqueUsersWithBrushsAndFixed = _.filter(uniqueUsersWithBrushs, function(logs) {
+		return _.some(logs, {action : 'Filter saved'});		
+    });	
+    var brushLogs = _.filter(global.logs, {action : 'Brush created'});
+	var brushLogsByComponent = _.groupBy(brushLogs, 'component');
+	
+	var brushLogsByTypeOutput = '';
+	total = 0;
+	_.forEach(brushLogsByComponent, function(n, key){ 
+		brushLogsByTypeOutput += '<tr><td>' + key + '</td><td class=number>' + brushLogsByComponent[key].length+'</td></tr>';  
+		total += brushLogsByComponent[key].length;
+	});
+	brushLogsByTypeOutput += '<tfoot><tr><td>Total</td><td class=number>' + total + '</td></tr></tfoot>';  
+		
+    var uniqueUsersWithSecondMainVis = _.filter(global.logsPerUser, function(logs) {
+		return _.some(logs, {action : 'Chart changed'});		
+    });
+		
+    var usersWithMainBarchart = _.filter(uniqueUsersWithBrushs, function(logs) { return _.some(logs, {uiState: { actVis : 'barchart'}}); });	
+    var usersWithMouseOverTimes = _.filter(uniqueUsersWithBrushs, function(logs) { return _.some(logs, {action: 'Mouse over times'}); });	
+    var logsPerActiveChart = _.groupBy(global.logs, 'uiState.actVis');
+	var logsPerActiveChart = _(global.logs).filter('uiState.actVis').groupBy('uiState.actVis').value();
+	var logsPerActiveChartOutput = '';
+	total = 0, totalduration=0;
+	_.forEach(logsPerActiveChart, function(n, key){ 
+		logsPerActiveChartOutput += '<tr><td>' + key + '</td><td class=number>' + logsPerActiveChart[key].length+'</td><td class=number>' + Math.round(_.sum(logsPerActiveChart[key], 'duration')/60) + '"</td></tr>';  
+		total += logsPerActiveChart[key].length;
+		totalduration += _.sum(logsPerActiveChart[key], 'duration');
+	});
+	logsPerActiveChartOutput += '<tfoot><tr><td>Total</td><td class=number>' + total + '</td><td class=number>' + Math.round(totalduration/60) + '"</td></tr></tfoot>';  
+	
+	// Mouse Over Times
+	function getMouseOverTimesOutput(mouseOverTimes){
+		var mouseOverTimesOutput = '';
+		var timeConfig = mouseOverTimes.sum('config.mouseOverTime');
+		var timeFilters = mouseOverTimes.sum('filters.mouseOverTime');
+		var timeList = mouseOverTimes.sum('list.mouseOverTime');
+		var timeMain = mouseOverTimes.sum('main.mouseOverTime');
+		var timeViews = mouseOverTimes.sum('views.mouseOverTime');
+		var totalTime = timeConfig + timeFilters + timeList + timeMain + timeViews;	
+		function getMouseOverRow(type, time, total){ return '<tr><td>' + type + '</td><td class="number">' + Math.round(time/60) + '"</td><td class="number">' + Math.round(time/total*100) + '%</td></tr>'; }
+		mouseOverTimesOutput += getMouseOverRow('Config', timeConfig, totalTime);
+		mouseOverTimesOutput += getMouseOverRow('Filters', timeFilters, totalTime);
+		mouseOverTimesOutput += getMouseOverRow('List', timeList, totalTime);
+		mouseOverTimesOutput += getMouseOverRow('Main', timeMain, totalTime);
+		mouseOverTimesOutput += getMouseOverRow('Views', timeViews, totalTime);
+		mouseOverTimesOutput += '<tfoot>' + getMouseOverRow('Total', totalTime, totalTime) + '</tfoot>';
+		return mouseOverTimesOutput;
+	}
+	var mouseOverTimes = _(global.logs).filter({action : 'Mouse over times'}).map('components').flatten();	
+	var mouseOverTimesOutput = getMouseOverTimesOutput(mouseOverTimes);
+	
+	var mouseOverTimesWhoBrushed = _(uniqueUsersWithBrushs).flatten().filter({action : 'Mouse over times'}).map('components').flatten();	
+	var mouseOverTimesWhoBrushedOutput = getMouseOverTimesOutput(mouseOverTimesWhoBrushed);
+    
+    
+    var feedbacks = _.filter(global.logs, {action : 'Feedback sent'});
+    var feedbackOutput = '';
+    _.forEach(feedbacks, function(f){ feedbackOutput += f.value + '<hr>'; });
+	
+	//var webGlLogsPerIp = _(global.logs).filter({uiState : {actVis:'WebGlVis'}}).groupBy('ip').value();
+	//var webGlLogsPerIpOutput = '';
+	//_.forEach(webGlLogsPerIp, function(n, key){ 
+	//	webGlLogsPerIpOutput += 'IP: ' + key + '<br>';  
+	//});
+		
+	$('#resultTable')		
+		.append('<tr><td>Users total: </td><td>' + Object.keys(global.logsPerUser).length + '</td></tr>')
+		.append('<tr><td>Users that did brush at lease once: </td><td>' + uniqueUsersWithBrushs.length + '</td></tr>')
+		.append('<tr><td>Users that fixed a filter: </td><td>' + uniqueUsersWithBrushsAndFixed.length + '</td></tr>')
+		.append('<tr><td>Brush logentries total: </td><td>' + brushLogs.length + '</td></tr>')
+		.append('<tr><td>Brush logentries by type: </td><td><table>' + brushLogsByTypeOutput + '</table></td></tr>')
+		.append('<tr><td>Users with more than 1 main chart: </td><td>' + uniqueUsersWithSecondMainVis.length + '</td></tr>')
+		.append('<tr><td>Logentries per Chart: </td><td><table>' + logsPerActiveChartOutput + '</table></td></tr>')
+		.append('<tr><td>Users that returned MouseOver Usage: </td><td>' + usersWithMouseOverTimes.length + '</td></tr>')
+		.append('<tr><td>MouseOver Times: </td><td><table>' + mouseOverTimesOutput + '</table></td></tr>')
+		.append('<tr><td>MouseOver Times from Users who brushed: </td><td><table>' + mouseOverTimesWhoBrushedOutput + '</table></td></tr>')
+        .append('<tr><td>Feedbacks: </td><td><table>' + feedbackOutput + '</table></td></tr>')
+		//.append('<tr><td>IP\'s von WebGL: </td><td><table>' + webGlLogsPerIpOutput + '</table></td></tr>')
+		// Legend:
+		.append('<tr><td colspan=2 style="border-color:transparent; border-top-color:black; padding-top:8px;"><span style="font-style:italic; font-size:0.9em">The term [Users] mean: unique users per day</span></td></tr>')
+		;
+	
+	
+}
+
+
+
+function executeAction(){
+
+	// cleanup:
+	$('#resultTable').empty();
+		
+	var action = $('#actionType').val();
+	if (action == 'showLogs')
+		printLogs();
+	if (action == 'statisticBrush')
+		calculateStatisticBrush();
+}
+
+
+
+
 $(document).on('ready', function(){
     document.getElementById('file-input-raw').addEventListener('change', readRawFiles, false);
     //document.getElementById('file-input-processed').addEventListener('change', readFileProcessed, false);
@@ -251,6 +375,7 @@ $(document).on('ready', function(){
         e.preventDefault();
         $(this).next().toggle();
     });
+	$('#actionType').on('change', function(){ executeAction(); });
 });
 
 
