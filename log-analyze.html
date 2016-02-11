@@ -127,11 +127,13 @@ function processFilesSequentially(inputFilesObject, processFunction, finishFunct
         var singleFile = filesArray.pop();
         if (singleFile === undefined) {
 			// Finished!
-			global.logs = _.filter(global.logs, function (l){ return l.ip != '129.27.219.242'; });
+			global.logs = _.filter(global.logs, function (l){ 
+					return l.ip != '129.27.219.242' // Know Center
+						&& l.ip != '80.109.198.108';  // Peter home
+				});
 			global.logs = _.sortBy(global.logs, 'timestamp');
 			global.logsPerUser = _.groupBy(global.logs, function(l){ 
-				var date = new Date(l.timestamp);
-				return l.userID + ' / ' + l.ip + ' / ' + date.getFullYear() + '-' + date.getMonth() + '-' + date.getDay();
+				return l.userID + ' / ' + l.ip + ' / ' + getDateOfLog(l);
 				//return l.userID + ' / ' + l.ip;
 			});	
 			printHeaderStatistics();			
@@ -261,34 +263,19 @@ function calculateStatisticBrush(){
     var uniqueUsersWithBrushsAndFixed = _.filter(uniqueUsersWithBrushs, function(logs) {
 		return _.some(logs, {action : 'Filter saved'});		
     });	
-    var brushLogs = _.filter(global.logs, {action : 'Brush created'});
-	var brushLogsByComponent = _.groupBy(brushLogs, 'component');
 	
-	var brushLogsByTypeOutput = '';
-	total = 0;
-	_.forEach(brushLogsByComponent, function(n, key){ 
-		brushLogsByTypeOutput += '<tr><td>' + key + '</td><td class=number>' + brushLogsByComponent[key].length+'</td></tr>';  
-		total += brushLogsByComponent[key].length;
-	});
-	brushLogsByTypeOutput += '<tfoot><tr><td>Total</td><td class=number>' + total + '</td></tr></tfoot>';  
+    var brushLogs = _.filter(global.logs, {action : 'Brush created'});	
+	var brushLogsByTypeOutput = getLogGroupOutput(_.groupBy(brushLogs, 'component'));
 		
     var uniqueUsersWithSecondMainVis = _.filter(global.logsPerUser, function(logs) {
 		return _.some(logs, {action : 'Chart changed'});		
     });
 		
     var usersWithMainBarchart = _.filter(uniqueUsersWithBrushs, function(logs) { return _.some(logs, {uiState: { actVis : 'barchart'}}); });	
-    var usersWithMouseOverTimes = _.filter(uniqueUsersWithBrushs, function(logs) { return _.some(logs, {action: 'Mouse over times'}); });	
-    var logsPerActiveChart = _.groupBy(global.logs, 'uiState.actVis');
+    var usersWithMouseOverTimes = _.filter(uniqueUsersWithBrushs, function(logs) { return _.some(logs, {action: 'Mouse over times'}); });	    
 	var logsPerActiveChart = _(global.logs).filter('uiState.actVis').groupBy('uiState.actVis').value();
-	var logsPerActiveChartOutput = '';
-	total = 0, totalduration=0;
-	_.forEach(logsPerActiveChart, function(n, key){ 
-		logsPerActiveChartOutput += '<tr><td>' + key + '</td><td class=number>' + logsPerActiveChart[key].length+'</td><td class=number>' + Math.round(_.sum(logsPerActiveChart[key], 'duration')/60) + '"</td></tr>';  
-		total += logsPerActiveChart[key].length;
-		totalduration += _.sum(logsPerActiveChart[key], 'duration');
-	});
-	logsPerActiveChartOutput += '<tfoot><tr><td>Total</td><td class=number>' + total + '</td><td class=number>' + Math.round(totalduration/60) + '"</td></tr></tfoot>';  
-	
+	var logsPerActiveChartOutput = getLogGroupAndDurationOutput(logsPerActiveChart);
+
 	// Mouse Over Times
 	function getMouseOverTimesOutput(mouseOverTimes){
 		var mouseOverTimesOutput = '';
@@ -311,18 +298,20 @@ function calculateStatisticBrush(){
 	var mouseOverTimesOutput = getMouseOverTimesOutput(mouseOverTimes);
 	
 	var mouseOverTimesWhoBrushed = _(uniqueUsersWithBrushs).flatten().filter({action : 'Mouse over times'}).map('components').flatten();	
-	var mouseOverTimesWhoBrushedOutput = getMouseOverTimesOutput(mouseOverTimesWhoBrushed);
-    
+	var mouseOverTimesWhoBrushedOutput = getMouseOverTimesOutput(mouseOverTimesWhoBrushed);    
     
     var feedbacks = _.filter(global.logs, {action : 'Feedback sent'});
     var feedbackOutput = '';
-    _.forEach(feedbacks, function(f){ feedbackOutput += f.value + '<hr>'; });
+    _.forEach(feedbacks, function(f){ feedbackOutput += getDateOfLog(f) + ':<br>' + f.value + '<hr>'; });
 	
 	//var webGlLogsPerIp = _(global.logs).filter({uiState : {actVis:'WebGlVis'}}).groupBy('ip').value();
 	//var webGlLogsPerIpOutput = '';
 	//_.forEach(webGlLogsPerIp, function(n, key){ 
 	//	webGlLogsPerIpOutput += 'IP: ' + key + '<br>';  
-	//});
+	//});	
+	
+	var logsByClientOutput = getLogGroupOutput(_.groupBy(global.logs, 'clientType'));
+	var logsByLoggerVersion = getLogGroupOutput(_.groupBy(global.logs, 'uiState.v'));
 		
 	$('#resultTable')		
 		.append('<tr><td>Users total: </td><td>' + Object.keys(global.logsPerUser).length + '</td></tr>')
@@ -336,12 +325,41 @@ function calculateStatisticBrush(){
 		.append('<tr><td>MouseOver Times: </td><td><table>' + mouseOverTimesOutput + '</table></td></tr>')
 		.append('<tr><td>MouseOver Times from Users who brushed: </td><td><table>' + mouseOverTimesWhoBrushedOutput + '</table></td></tr>')
         .append('<tr><td>Feedbacks: </td><td><table>' + feedbackOutput + '</table></td></tr>')
+        .append('<tr><td>Client: </td><td><table>' + logsByClientOutput + '</table></td></tr>')		
+        .append('<tr><td>Logger Version: </td><td><table>' + logsByLoggerVersion + '</table></td></tr>')		
 		//.append('<tr><td>IP\'s von WebGL: </td><td><table>' + webGlLogsPerIpOutput + '</table></td></tr>')
 		// Legend:
 		.append('<tr><td colspan=2 style="border-color:transparent; border-top-color:black; padding-top:8px;"><span style="font-style:italic; font-size:0.9em">The term [Users] mean: unique users per day</span></td></tr>')
 		;
 	
 	
+}
+
+function getDateOfLog(log){
+    var date = new Date(log.timestamp);
+    return date.getFullYear() + '-' + date.getMonth() + '-' + date.getDay();
+}
+
+function getLogGroupOutput(logsGrouped){	
+	var output = '', total = 0;
+	_.forEach(logsGrouped, function(n, key){ 
+		output += '<tr><td>' + key + '</td><td class=number>' + logsGrouped[key].length+'</td></tr>';  
+		total += logsGrouped[key].length;
+	});
+	output += '<tfoot><tr><td>Total</td><td class=number>' + total + '</td></tr></tfoot>';  
+	
+	return output;
+}
+
+function getLogGroupAndDurationOutput(logsGrouped){	
+	var output = '', total = 0, totalduration = 0;
+	_.forEach(logsGrouped, function(n, key){ 
+		output += '<tr><td>' + key + '</td><td class=number>' + logsGrouped[key].length+'</td><td class=number>' + Math.round(_.sum(logsGrouped[key], 'duration')/60) + '"</td></tr>';  
+		total += logsGrouped[key].length;
+		totalduration += _.sum(logsGrouped[key], 'duration');
+	});
+	output += '<tfoot><tr><td>Total</td><td class=number>' + total + '</td><td class=number>' + Math.round(totalduration/60) + '"</td></tr></tfoot>'; 
+	return output;
 }
 
 
